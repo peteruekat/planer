@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Demo</title>
+    <style>
+        body { margin: 0; background-color: white; cursor: pointer; }
+        canvas { display: block; }
+        #buttons {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #loadSpaces {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            gap: 10px;
+            overflow-x: auto;
+        }
+        .spaceBox {
+            min-width: 100px;
+            height: 80px;
+            border: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 5px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            text-align: center;
+        }
+        .spaceBox.selected {
+            border-color: #0066ff;
+            background: #e6f0ff;
+        }
+        button {
+            display: block;
+            margin: 5px;
+            padding: 5px;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div id="buttons">
+        <button onclick="addVehicle('Bus 8 EP', 420, 220, 220)">Bus 8 EP (420x220x220)</button>
+        <button onclick="addVehicle('Bus 10 EP', 490, 220, 230)">Bus 10 EP (490x220x230)</button>
+        <button onclick="addVehicle('Solówka 10 EP Axle', 400.8, 241.2, 280)">Solówka 10 EP (400.8x241.2x280)</button>
+        <button onclick="addVehicle('Bus 12 EP', 590, 230, 230)">Bus 12 EP (590x230x230)</button>
+        <button onclick="addVehicle('Solówka 15 EP', 620, 245, 240)">Solówka 15 EP (620x245x240)</button>
+        <button onclick="addVehicle('Solówka 18 EP', 720, 245, 240)">Solówka 18 EP (720x245x240)</button>
+        <button onclick="addVehicle('Solówka 20 EP', 820, 245, 240)">Solówka 20 EP (820x245x240)</button>
+        <button onclick="addVehicle('Naczepa standard 33 EP', 1360, 245, 270)">Naczepa standard 33 EP (1360x245x270)</button>
+        <button onclick="addVehicle('Zestaw 765x240x270', 765, 240, 270)">Zestaw 765x240x270</button>
+        <button onclick="addVehicle('Naczepa mega 33 EP', 1360, 250, 300)">Naczepa mega 33 EP (1360x250x300)</button>
+        <button onclick="addVehicle('Zestaw 775x240x305', 775, 240, 305)">Zestaw 775x240x305</button>
+    </div>
+    <div id="loadSpaces"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2;
+        controls.minDistance = 2;
+        controls.maxDistance = 100;
+
+        camera.position.set(20, 20, 20);
+        controls.target.set(0, 0, 0);
+
+        // Mniejsza siatka, bardziej odpowiednia do skali pojazdów
+        const gridHelper = new THREE.GridHelper(50, 50);
+        scene.add(gridHelper);
+
+        let vehicles = [];
+        const MAX_VEHICLES = 10;
+        const SPACING = 2; // Zmniejszony odstęp między pojazdami
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let selectedVehicle = null; // Dodajemy zmienną do śledzenia aktualnie wybranej jednostki
+
+
+
+        // Dodaj do istniejącego kodu funkcję aktualizującą panel na dole
+        function updateLoadSpacesPanel() {
+            const panel = document.getElementById('loadSpaces');
+            panel.innerHTML = '';
+            
+            vehicles.forEach((vehicle, index) => {
+                const box = document.createElement('div');
+                box.className = 'spaceBox';
+                if (selectedVehicle === vehicle) {
+                    box.classList.add('selected');
+                }
+                
+                const name = vehicle.userData.name;
+                const dimensions = vehicle.geometry.parameters;
+                box.innerHTML = `
+                    ${name}<br>
+                    ${Math.round(dimensions.width * 100)}x${Math.round(dimensions.height * 100)}x${Math.round(dimensions.depth * 100)} cm
+                `;
+                
+                box.onclick = () => {
+                    if (selectedVehicle !== vehicle) {
+                        selectedVehicle = vehicle;
+                        const position = vehicle.position.clone();
+                        
+                        const targetPosition = new THREE.Vector3(
+                            position.x + 5,
+                            position.y + 5,
+                            position.z + 5
+                        );
+
+                        const startPosition = camera.position.clone();
+                        const startTarget = controls.target.clone();
+                        const duration = 1000;
+                        const startTime = Date.now();
+
+                        function animateCamera() {
+                            const elapsed = Date.now() - startTime;
+                            const progress = Math.min(elapsed / duration, 1);
+                            const easeProgress = 1 - Math.cos((progress * Math.PI) / 2);
+
+                            camera.position.lerpVectors(startPosition, targetPosition, easeProgress);
+                            controls.target.lerpVectors(startTarget, position, easeProgress);
+
+                            if (progress < 1) {
+                                requestAnimationFrame(animateCamera);
+                            }
+                        }
+
+                        animateCamera();
+                        updateLoadSpacesPanel();
+                    }
+                };
+                
+                panel.appendChild(box);
+            });
+        }
+
+        function onClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(vehicles);
+
+            if (intersects.length > 0) {
+                const clickedVehicle = intersects[0].object;
+                
+                if (selectedVehicle !== clickedVehicle) {
+                    selectedVehicle = clickedVehicle;
+                    const position = clickedVehicle.position.clone();
+                    
+                    const targetPosition = new THREE.Vector3(
+                        position.x + 5,
+                        position.y + 5,
+                        position.z + 5
+                    );
+
+                    const startPosition = camera.position.clone();
+                    const startTarget = controls.target.clone();
+                    const duration = 1000;
+                    const startTime = Date.now();
+
+                    function animateCamera() {
+                        const elapsed = Date.now() - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        const easeProgress = 1 - Math.cos((progress * Math.PI) / 2);
+
+                        camera.position.lerpVectors(startPosition, targetPosition, easeProgress);
+                        controls.target.lerpVectors(startTarget, position, easeProgress);
+
+                        if (progress < 1) {
+                            requestAnimationFrame(animateCamera);
+                        }
+                    }
+
+                    animateCamera();
+                    updateLoadSpacesPanel(); // Aktualizacja panelu po wybraniu pojazdu
+                }
+            }
+        }
+
+
+        function addVehicle(name, length, width, height) {
+            if (vehicles.length >= MAX_VEHICLES) {
+                alert('Osiągnięto maksymalną liczbę pojazdów (10)');
+                return;
+            }
+
+            length = length / 100;
+            width = width / 100;
+            height = height / 100;
+
+            const geometry = new THREE.BoxGeometry(length, height, width);
+            const material = new THREE.MeshBasicMaterial({
+                color: Math.random() * 0xffffff,
+                wireframe: true
+            });
+            const vehicle = new THREE.Mesh(geometry, material);
+
+            if (vehicles.length === 0) {
+                vehicle.position.set(0, height/2, 0);
+            } else {
+                const lastVehicle = vehicles[vehicles.length - 1];
+                const lastZ = lastVehicle.position.z;
+                const lastWidth = lastVehicle.geometry.parameters.width;
+                const newZ = lastZ + (lastWidth/2) + (width/2) + SPACING;
+                vehicle.position.set(0, height/2, newZ);
+            }
+
+            vehicle.userData.name = name;
+            scene.add(vehicle);
+            vehicles.push(vehicle);
+            updateLoadSpacesPanel(); // Aktualizacja panelu po dodaniu pojazdu
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+        window.addEventListener('click', onClick, false);
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
